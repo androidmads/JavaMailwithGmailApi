@@ -16,7 +16,8 @@
         android:id="@+id/to_address"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Recipient" />
+        android:hint="Recipient"
+        android:inputType="textEmailAddress"/>
 
     <EditText
         android:id="@+id/subject"
@@ -54,5 +55,11 @@
             android:layout_height="wrap_content"
             android:hint="BROWSE" />
     </LinearLayout>
+
+    <Button
+        android:id="@+id/changeAccount"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Change Account" />
 
 </LinearLayout>

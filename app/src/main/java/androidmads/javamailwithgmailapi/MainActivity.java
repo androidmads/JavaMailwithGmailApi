@@ -2,15 +2,12 @@ package androidmads.javamailwithgmailapi;
 
 import android.Manifest;
 import android.accounts.AccountManager;
-import android.app.Activity;
 import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -41,11 +38,8 @@ import com.google.api.services.gmail.GmailScopes;
 import com.google.api.services.gmail.model.Message;
 
 import java.io.ByteArrayOutputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.Properties;
 
 import javax.activation.DataHandler;
@@ -104,6 +98,18 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        findViewById(R.id.changeAccount).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (Utils.checkPermission(getApplicationContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                    startActivityForResult(mCredential.newChooseAccountIntent(), Utils.REQUEST_ACCOUNT_PICKER);
+                } else {
+                    ActivityCompat.requestPermissions(MainActivity.this,
+                            new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, SELECT_PHOTO);
+                }
+            }
+        });
+
         sendFabButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -133,10 +139,6 @@ public class MainActivity extends AppCompatActivity {
         edtSubject = (EditText) findViewById(R.id.subject);
         edtMessage = (EditText) findViewById(R.id.body);
         edtAttachmentData = (EditText) findViewById(R.id.attachmentData);
-
-        edtToAddress.setText("mushtaq12121993@gmail.com");
-        edtSubject.setText("mushtaq12121993@gmail.com");
-        edtMessage.setText("mushtaq12121993@gmail.com");
 
     }
 
