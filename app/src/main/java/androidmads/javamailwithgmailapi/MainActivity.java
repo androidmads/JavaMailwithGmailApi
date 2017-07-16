@@ -2,13 +2,19 @@ package androidmads.javamailwithgmailapi;
 
 import android.Manifest;
 import android.accounts.AccountManager;
+import android.app.Activity;
 import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
@@ -35,14 +41,24 @@ import com.google.api.services.gmail.GmailScopes;
 import com.google.api.services.gmail.model.Message;
 
 import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Properties;
 
+import javax.activation.DataHandler;
+import javax.activation.DataSource;
+import javax.activation.FileDataSource;
+import javax.mail.BodyPart;
 import javax.mail.MessagingException;
+import javax.mail.Multipart;
 import javax.mail.Session;
 import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeBodyPart;
 import javax.mail.internet.MimeMessage;
+import javax.mail.internet.MimeMultipart;
 
 import androidmads.javamailwithgmailapi.helper.InternetDetector;
 import androidmads.javamailwithgmailapi.helper.Utils;
@@ -50,7 +66,7 @@ import androidmads.javamailwithgmailapi.helper.Utils;
 public class MainActivity extends AppCompatActivity {
 
     FloatingActionButton sendFabButton;
-    EditText edtToAddress, edtSubject, edtMessage;
+    EditText edtToAddress, edtSubject, edtMessage, edtAttachmentData;
     Toolbar toolbar;
     GoogleAccountCredential mCredential;
     ProgressDialog mProgress;
@@ -64,6 +80,8 @@ public class MainActivity extends AppCompatActivity {
             GmailScopes.MAIL_GOOGLE_COM
     };
     private InternetDetector internetDetector;
+    private final int SELECT_PHOTO = 1;
+    public String fileName = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,6 +89,20 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         init();
+
+        findViewById(R.id.attachment).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (Utils.checkPermission(getApplicationContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                    Intent photoPickerIntent = new Intent(Intent.ACTION_PICK);
+                    photoPickerIntent.setType("image/*");
+                    startActivityForResult(photoPickerIntent, SELECT_PHOTO);
+                } else {
+                    ActivityCompat.requestPermissions(MainActivity.this,
+                            new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, SELECT_PHOTO);
+                }
+            }
+        });
 
         sendFabButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -100,6 +132,11 @@ public class MainActivity extends AppCompatActivity {
         edtToAddress = (EditText) findViewById(R.id.to_address);
         edtSubject = (EditText) findViewById(R.id.subject);
         edtMessage = (EditText) findViewById(R.id.body);
+        edtAttachmentData = (EditText) findViewById(R.id.attachmentData);
+
+        edtToAddress.setText("mushtaq12121993@gmail.com");
+        edtSubject.setText("mushtaq12121993@gmail.com");
+        edtMessage.setText("mushtaq12121993@gmail.com");
 
     }
 
@@ -121,7 +158,7 @@ public class MainActivity extends AppCompatActivity {
         } else if (!Utils.isNotEmpty(edtMessage)) {
             showMessage(view, "Message Required");
         } else {
-            new MakeRequestTask(mCredential).execute();
+            new MakeRequestTask(this, mCredential).execute();
         }
     }
 
@@ -174,6 +211,11 @@ public class MainActivity extends AppCompatActivity {
             case Utils.REQUEST_PERMISSION_GET_ACCOUNTS:
                 chooseAccount(sendFabButton);
                 break;
+            case SELECT_PHOTO:
+                Intent photoPickerIntent = new Intent(Intent.ACTION_PICK);
+                photoPickerIntent.setType("image/*");
+                startActivityForResult(photoPickerIntent, SELECT_PHOTO);
+                break;
         }
     }
 
@@ -207,22 +249,44 @@ public class MainActivity extends AppCompatActivity {
                     getResultsFromApi(sendFabButton);
                 }
                 break;
+            case SELECT_PHOTO:
+                if (resultCode == RESULT_OK) {
+                    final Uri imageUri = data.getData();
+                    fileName = getPathFromURI(imageUri);
+                    edtAttachmentData.setText(fileName);
+                }
         }
+    }
+
+    public String getPathFromURI(Uri contentUri) {
+        String res = null;
+        String[] proj = {MediaStore.Images.Media.DATA};
+        Cursor cursor = getContentResolver().query(contentUri, proj, "", null, "");
+        assert cursor != null;
+        if (cursor.moveToFirst()) {
+            int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+            res = cursor.getString(column_index);
+        }
+        cursor.close();
+        return res;
     }
 
     // Async Task for sending Mail using GMail OAuth
     private class MakeRequestTask extends AsyncTask<Void, Void, String> {
+
         private com.google.api.services.gmail.Gmail mService = null;
         private Exception mLastError = null;
         private View view = sendFabButton;
+        private MainActivity activity;
 
-        public MakeRequestTask(GoogleAccountCredential credential) {
+        MakeRequestTask(MainActivity activity, GoogleAccountCredential credential) {
             HttpTransport transport = AndroidHttp.newCompatibleTransport();
             JsonFactory jsonFactory = JacksonFactory.getDefaultInstance();
             mService = new com.google.api.services.gmail.Gmail.Builder(
                     transport, jsonFactory, credential)
                     .setApplicationName(getResources().getString(R.string.app_name))
                     .build();
+            this.activity = activity;
         }
 
         @Override
@@ -283,7 +347,29 @@ public class MainActivity extends AppCompatActivity {
             email.setFrom(fAddress);
             email.addRecipient(javax.mail.Message.RecipientType.TO, tAddress);
             email.setSubject(subject);
-            email.setText(bodyText);
+
+            // Create Multipart object and add MimeBodyPart objects to this object
+            Multipart multipart = new MimeMultipart();
+
+            // Changed for adding attachment and text
+            // email.setText(bodyText);
+
+            BodyPart textBody = new MimeBodyPart();
+            textBody.setText(bodyText);
+            multipart.addBodyPart(textBody);
+
+            if (!(activity.fileName.equals(""))) {
+                // Create new MimeBodyPart object and set DataHandler object to this object
+                MimeBodyPart attachmentBody = new MimeBodyPart();
+                String filename = activity.fileName; // change accordingly
+                DataSource source = new FileDataSource(filename);
+                attachmentBody.setDataHandler(new DataHandler(source));
+                attachmentBody.setFileName(filename);
+                multipart.addBodyPart(attachmentBody);
+            }
+
+            //Set the multipart object to the message object
+            email.setContent(multipart);
             return email;
         }
 
@@ -325,8 +411,8 @@ public class MainActivity extends AppCompatActivity {
                             ((UserRecoverableAuthIOException) mLastError).getIntent(),
                             Utils.REQUEST_AUTHORIZATION);
                 } else {
-                    showMessage(view, "The following error occurred:\n" + mLastError.getMessage());
-                    Log.v("Error", mLastError.getMessage());
+                    showMessage(view, "The following error occurred:\n" + mLastError);
+                    Log.v("Error", mLastError + "");
                 }
             } else {
                 showMessage(view, "Request Cancelled.");
